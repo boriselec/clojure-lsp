@@ -1,0 +1,49 @@
+name: Fork build (macOS aarch64)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  macos-aarch64:
+    name: Build native macOS aarch64 binary
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version comes from lib/resources/CLOJURE_LSP_VERSION, so unlike the
+      # upstream release workflow this needs no tags and no fetch-depth: 0.
+      - name: Install clojure build tools
+        uses: DeLaGuardo/setup-clojure@master
+        with:
+          cli: '1.12.0.1495'
+          bb: '0.9.161'
+
+      - name: Cache maven deps
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/deps.edn') }}
+          restore-keys: ${{ runner.os }}-m2-
+
+      # Oracle GraalVM, not community: build.clj passes --pgo, which CE lacks.
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '21'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # No CLOJURE_LSP_JAR, so native-cli builds the standalone jar itself and
+      # the whole thing stays one job. 6g matches what upstream gives macos-14.
+      - name: Build native image
+        env:
+          CLOJURE_LSP_XMX: '-J-Xmx6g'
+        run: bb native-cli
+
+      - name: Smoke check
+        run: ./clojure-lsp --version
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: clojure-lsp-macos-aarch64
+          path: clojure-lsp
